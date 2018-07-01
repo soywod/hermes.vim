@@ -1,10 +1,13 @@
 #!/bin/bash
 
 # socket &3
-socket=/dev/tcp/irc.freenode.net/6667
+socket=/dev/tcp/$2/$3
 
-# fifo   &4
-fifo=/tmp/hfifo
+# fifo &4
+fifo=/tmp/hfifo-$1
+
+# log
+log=/tmp/hlog-$1
 
 function fifo_to_socket {
   rm -f   $fifo
@@ -17,11 +20,11 @@ function fifo_to_socket {
 }
 
 function socket_to_fifo {
-  rm -f /tmp/hlog
+  rm -f $log
 
   while read -r line; do
     echo "$line"
-    echo "$line" >>/tmp/hlog
+    echo "$line" >>$log
   done <&3
 }
 

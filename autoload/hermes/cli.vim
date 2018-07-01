@@ -1,3 +1,4 @@
+let s:connections = []
 let s:REGEX_IRC = '^(?:@([^\r\n ]*) +|())(?::([^\r\n ]+) +|())([^\r\n ]+)(?: +([^:\r\n ]+[^\r\n ]*(?: +[^:\r\n ]+[^\r\n ]*)*)|())?(?: +:([^\r\n]*)| +())?[\r\n]*$'
 
 " ------------------------------------------------------------------ # Connect #
@@ -10,21 +11,27 @@ function! hermes#cli#Connect(alias)
   execute 'tabnew ' . a:alias
   setlocal filetype=hlog
 
-  let s:fcall = 1
+  let s:connections += [a:alias]
+
   call job_start(
-    \['/bin/sh', hermes#Socket()],
+    \['/bin/sh', hermes#Socket(), a:alias, server.hostname, server.port],
     \{
       \'mode': 'nl',
-      \'out_cb': function('s:ConnectCallback'),
+      \'out_cb': s:ConnectCallbackWrapper(a:alias),
     \},
   \)
 endfunction
 
-function! s:ConnectCallback(_, data)
-  if s:fcall
-    call hermes#cli#User(g:hermes_username, '0', '*', g:hermes_realname)
-    call hermes#cli#Nick(g:hermes_nickname)
-    let s:fcall = 0
+function! s:ConnectCallbackWrapper(alias)
+  return {_, data -> s:ConnectCallback(a:alias, data)}
+endfunction
+
+function! s:ConnectCallback(alias, data)
+  let index = index(s:connections, a:alias)
+  if  index + 1
+    call hermes#cli#User(a:alias, g:hermes_username, '0', '*', g:hermes_realname)
+    call hermes#cli#Nick(a:alias, g:hermes_nickname)
+    call remove(s:connections, index)
   endif
 
   pythonx import re, vim
@@ -40,23 +47,32 @@ function! s:ConnectCallback(_, data)
   let line = printf('%s | %s | %s %s', now, prefix, params, optparams)
 
   setlocal modifiable
-  call setbufline('freenode', line('$') + 1, line)
+  let end = len(getbufline(a:alias, 0, '$')) + 1
+  call setbufline(a:alias, end, line)
+  normal! G
   setlocal nomodifiable
-endfunction
-
-" --------------------------------------------------------------------- # User #
-
-" https://tools.ietf.org/html/rfc2812#section-3.1.3
-function! hermes#cli#User(user, mode, unused, realname)
-  let cmd = printf('USER %s %s %s :%s', a:user, a:mode, a:unused, a:realname)
-  call hermes#core#irc#Send(cmd)
 endfunction
 
 " --------------------------------------------------------------------- # Nick #
 
 " https://tools.ietf.org/html/rfc2812#section-3.1.2
-function! hermes#cli#Nick(nickname)
+function! hermes#cli#Nick(server, nickname)
   let cmd = printf('NICK %s', a:nickname)
-  call hermes#core#irc#Send(cmd)
+  call hermes#core#irc#Send(a:server, cmd)
+endfunction
+
+" --------------------------------------------------------------------- # User #
+
+" https://tools.ietf.org/html/rfc2812#section-3.1.3
+function! hermes#cli#User(server, user, mode, unused, realname)
+  let cmd = printf('USER %s %s %s :%s', a:user, a:mode, a:unused, a:realname)
+  call hermes#core#irc#Send(a:server, cmd)
+endfunction
+
+" --------------------------------------------------------------------- # Send #
+
+function! hermes#cli#Send(cmd)
+  let server = bufname('%')
+  call hermes#core#irc#Send(server, a:cmd)
 endfunction
 

@@ -1,13 +1,12 @@
 #!/bin/bash
 
-# socket  : &3
-# fifo-in : &4 /tmp/hermes-in (write to socket)
-# fifo-out: -- /tmp/hermes-out (read from socket)
+# socket: &3
+# fifo  : &4 /tmp/hermes
 
 function fifo_to_socket {
-  fifo=/tmp/hermes-in
-  rm -f  $fifo
-  mkfifo $fifo
+  fifo=/tmp/hfifo
+  rm -f   $fifo
+  mkfifo  $fifo
   exec 4<>$fifo
 
   while read -r line; do
@@ -16,12 +15,11 @@ function fifo_to_socket {
 }
 
 function socket_to_fifo {
-  file=/tmp/hermes-out
-  rm -f  $file
-  mkfifo $file
+  rm -f /tmp/hlog
 
   while read -r line; do
-    echo "$line" >>$file
+    echo "$line"
+    echo "$line" >>/tmp/hlog
   done <&3
 }
 

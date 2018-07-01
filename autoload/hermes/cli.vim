@@ -1,5 +1,6 @@
-let s:connections = []
 let s:REGEX_IRC = '^(?:@([^\r\n ]*) +|())(?::([^\r\n ]+) +|())([^\r\n ]+)(?: +([^:\r\n ]+[^\r\n ]*(?: +[^:\r\n ]+[^\r\n ]*)*)|())?(?: +:([^\r\n]*)| +())?[\r\n]*$'
+
+let s:state = {}
 
 " ------------------------------------------------------------------ # Connect #
 
@@ -8,17 +9,20 @@ function! hermes#cli#Connect(alias)
   let server = server[a:alias]
   let host = printf('%s:%d', server.hostname, server.port)
 
-  execute 'tabnew ' . a:alias
+  execute 'edit ' . a:alias
   setlocal filetype=hlog
 
-  let s:connections += [a:alias]
+  let s:state[a:alias] = {'connected': 0, 'logs': []}
+  let logs = s:state[a:alias].logs
+
+  augroup HermesLogs
+    autocmd! * <buffer>
+    autocmd BufEnter <buffer> call s:BufEnter()
+  augroup END
 
   call job_start(
     \['/bin/sh', hermes#Socket(), a:alias, server.hostname, server.port],
-    \{
-      \'mode': 'nl',
-      \'out_cb': s:ConnectCallbackWrapper(a:alias),
-    \},
+    \{'mode': 'nl', 'out_cb': s:ConnectCallbackWrapper(a:alias)},
   \)
 endfunction
 
@@ -27,11 +31,10 @@ function! s:ConnectCallbackWrapper(alias)
 endfunction
 
 function! s:ConnectCallback(alias, data)
-  let index = index(s:connections, a:alias)
-  if  index + 1
+  if ! s:state[a:alias].connected
     call hermes#cli#User(a:alias, g:hermes_username, '0', '*', g:hermes_realname)
     call hermes#cli#Nick(a:alias, g:hermes_nickname)
-    call remove(s:connections, index)
+    let s:state[a:alias].connected = 1
   endif
 
   pythonx import re, vim
@@ -44,12 +47,13 @@ function! s:ConnectCallback(alias, data)
   let verb = matches[4]
   let params = matches[5]
   let optparams = matches[7]
-  let line = printf('%s | %s | %s %s', now, prefix, params, optparams)
+  let newline = printf('%s | %s | %s %s', now, prefix, params, optparams)
+  let s:state[a:alias].logs += [newline]
+
+  if bufname('%') != a:alias | return | endif
 
   setlocal modifiable
-  let end = len(getbufline(a:alias, 0, '$')) + 1
-  call setbufline(a:alias, end, line)
-  normal! G
+  call append(line('$'), newline)
   setlocal nomodifiable
 endfunction
 
@@ -74,5 +78,11 @@ endfunction
 function! hermes#cli#Send(cmd)
   let server = bufname('%')
   call hermes#core#irc#Send(server, a:cmd)
+endfunction
+
+function! s:BufEnter()
+  setlocal modifiable
+  0,$d | call append(0, s:state[bufname('%')].logs) | $d
+  setlocal nomodifiable
 endfunction
 

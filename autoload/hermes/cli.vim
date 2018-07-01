@@ -12,12 +12,11 @@ function! hermes#cli#Connect(alias)
   execute 'edit ' . a:alias
   setlocal filetype=hlog
 
-  let s:state[a:alias] = {'connected': 0, 'logs': []}
-  let logs = s:state[a:alias].logs
+  let s:state[a:alias] = {'connected': 0, 'logs': [], 'scope': {'type': '*'}}
 
   augroup HermesLogs
     autocmd! * <buffer>
-    autocmd BufEnter <buffer> call s:BufEnter()
+    autocmd BufEnter <buffer> call hermes#cli#Refresh()
   augroup END
 
   call job_start(
@@ -48,13 +47,16 @@ function! s:ConnectCallback(alias, data)
   let params = matches[5]
   let optparams = matches[7]
   let newline = printf('%s | %s | %s %s', now, prefix, params, optparams)
-  let s:state[a:alias].logs += [newline]
+  let s:state[a:alias].logs += [{
+    \'prefix': prefix,
+    \'verb': verb,
+    \'params': params,
+    \'tostring': newline,
+  \}]
 
-  if bufname('%') != a:alias | return | endif
-
-  setlocal modifiable
-  call append(line('$'), newline)
-  setlocal nomodifiable
+  if bufname('%') == a:alias
+    call hermes#cli#Refresh()
+  endif
 endfunction
 
 " --------------------------------------------------------------------- # Nick #
@@ -80,9 +82,63 @@ function! hermes#cli#Send(cmd)
   call hermes#core#irc#Send(server, a:cmd)
 endfunction
 
-function! s:BufEnter()
+" -------------------------------------------------------------------- # Scope #
+
+function! hermes#cli#Scope()
+  let server = bufname('%')
+  let scope = input('Enter a scope (channel or user): ')
+  let s:state[server].scope = scope =~? '^#'
+    \? {'type': 'channel', 'value': scope}
+    \: {'type': 'user', 'value': scope}
+
+  call hermes#cli#Refresh()
+endfunction
+
+" -------------------------------------------------------------- # Scope clear #
+
+function! hermes#cli#ScopeClear()
+  let server = bufname('%')
+  let s:state[server].scope = {'type': '*'}
+
+  call hermes#cli#Refresh()
+endfunction
+
+" ------------------------------------------------------------------ # Helpers #
+
+function! hermes#cli#Refresh()
+  let server = bufname('%')
+  let state = s:state[server]
+  let logs = state.logs
+
+  if state.scope.type == 'channel'
+    let channel = state.scope.value
+    let logs = filter(copy(logs), s:ByChannel(channel))
+  elseif state.scope.type == 'user'
+    let user = state.scope.value
+    let logs = filter(copy(logs), s:ByUser(user))
+  endif
+
+  let logs = map(copy(logs), 'v:val.tostring')
+
   setlocal modifiable
-  0,$d | call append(0, s:state[bufname('%')].logs) | $d
+  0,$d | call append(0, logs)
   setlocal nomodifiable
+endfunction
+
+function! s:ByChannel(channel)
+  let channel  = printf('v:val.params =~? "%s"', a:channel)
+  let userinfo = printf('v:val.prefix =~? "%s"', g:hermes_username)
+
+  return printf('%s || %s', channel, userinfo)
+endfunction
+
+function! s:ByUser(sender)
+  let verb     = printf('v:val.verb == "%s"', 'PRIVMSG')
+  let sender   = printf('v:val.prefix =~? "%s"', a:sender)
+  let receiver = printf('v:val.params =~? "%s"', g:hermes_username)
+  let userinfo = printf('v:val.prefix =~? "%s"', g:hermes_username)
+  let privmsg  = printf('%s && %s && %s', verb, sender, receiver)
+
+  return printf('%s || %s', privmsg, userinfo)
 endfunction
 

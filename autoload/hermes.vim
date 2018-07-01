@@ -2,7 +2,9 @@
 
 function! s:Actions(args)
   return [
-    \['^co\?n\?n\?e\?c\?t\?', 'Connect'],
+    \['^ni\?c\?k\?$'         , 'Nick'   ],
+    \['^us\?e\?r\?$'         , 'User'   ],
+    \['^co\?n\?n\?e\?c\?t\?$', 'Connect'],
   \]
 endfunction
 

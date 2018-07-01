@@ -1,10 +1,12 @@
 #!/bin/bash
 
-# socket: &3
-# fifo  : &4 /tmp/hermes
+# socket &3
+socket=/dev/tcp/irc.freenode.net/6667
+
+# fifo   &4
+fifo=/tmp/hfifo
 
 function fifo_to_socket {
-  fifo=/tmp/hfifo
   rm -f   $fifo
   mkfifo  $fifo
   exec 4<>$fifo
@@ -23,7 +25,7 @@ function socket_to_fifo {
   done <&3
 }
 
-exec 3<>/dev/tcp/irc.freenode.net/6667
-socket_to_fifo &
+exec 3<>$socket
 fifo_to_socket &
+socket_to_fifo &
 

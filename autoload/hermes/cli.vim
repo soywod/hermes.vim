@@ -1,5 +1,11 @@
 let s:REGEX_IRC = '^(?:@([^\r\n ]*) +|())(?::([^\r\n ]+) +|())([^\r\n ]+)(?: +([^:\r\n ]+[^\r\n ]*(?: +[^:\r\n ]+[^\r\n ]*)*)|())?(?: +:([^\r\n]*)| +())?[\r\n]*$'
 
+let s:scope = [
+  \{'type': '*'},
+  \{'type': 'channel', 'value': ''},
+  \{'type': 'user', 'value': ''},
+\]
+
 let s:state = {}
 
 " ------------------------------------------------------------------ # Connect #
@@ -12,7 +18,12 @@ function! hermes#cli#Connect(alias)
   execute 'edit ' . a:alias
   setlocal filetype=hlog
 
-  let s:state[a:alias] = {'connected': 0, 'logs': [], 'scope': {'type': '*'}}
+  let s:state[a:alias] = {
+    \'connected': 0,
+    \'currscope': '*',
+    \'logs': [],
+    \'scopes': ['', '', '']
+  \}
 
   augroup HermesLogs
     autocmd! * <buffer>
@@ -84,12 +95,28 @@ endfunction
 
 " -------------------------------------------------------------------- # Scope #
 
-function! hermes#cli#Scope()
+function! hermes#cli#ScopeChange(id)
   let server = bufname('%')
-  let scope = input('Enter a scope (channel or user): ')
-  let s:state[server].scope = scope =~? '^#'
-    \? {'type': 'channel', 'value': scope}
-    \: {'type': 'user', 'value': scope}
+  let s:state[server].currscope = a:id
+
+  call hermes#cli#Refresh()
+endfunction
+
+function! hermes#cli#ScopeSet()
+  let server = bufname('%')
+  let state = s:state[server]
+  let scope = input('Define a scope (#channel or user): ')
+
+  if scope =~? '^ *$'
+    let id = 0
+  elseif scope =~? '^ *#'
+    let id = 1
+  else
+    let id = 2
+  endif
+
+  let state.scopes[id] = scope
+  let state.currscope = id
 
   call hermes#cli#Refresh()
 endfunction
@@ -98,7 +125,7 @@ endfunction
 
 function! hermes#cli#ScopeClear()
   let server = bufname('%')
-  let s:state[server].scope = {'type': '*'}
+  let s:state[server].currscope = 0
 
   call hermes#cli#Refresh()
 endfunction
@@ -110,12 +137,16 @@ function! hermes#cli#Refresh()
   let state = s:state[server]
   let logs = state.logs
 
-  if state.scope.type == 'channel'
-    let channel = state.scope.value
-    let logs = filter(copy(logs), s:ByChannel(channel))
-  elseif state.scope.type == 'user'
-    let user = state.scope.value
-    let logs = filter(copy(logs), s:ByUser(user))
+  if state.currscope == 1
+    let channel = state.scopes[1]
+    let logs = empty(channel)
+      \? []
+      \: filter(copy(logs), s:ByChannel(channel))
+  elseif state.currscope == 2
+    let user = state.scopes[2]
+    let logs = empty(user)
+      \? []
+      \: filter(copy(logs), s:ByUser(user))
   endif
 
   let logs = map(copy(logs), 'v:val.tostring')
